@@ -59,7 +59,7 @@ export function TodayPage() {
   return (
     <div className="px-6 py-6 lg:px-10 lg:py-8 max-w-5xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl lg:text-3xl font-bold mb-1">{formatDateKo(new Date().toISOString(), 'M월 d일 (eee)')}</h1>
+        <h1 className="font-serif text-3xl lg:text-4xl font-bold mb-1">{formatDateKo(new Date().toISOString(), 'M월 d일 (eee)')}</h1>
         <div className="text-sm text-ink-500 dark:text-ink-400">오늘의 연습</div>
       </div>
 

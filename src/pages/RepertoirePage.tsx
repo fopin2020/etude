@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
-import { Plus, Music, ArrowDownNarrowWide } from 'lucide-react'
+import { Plus, Music } from 'lucide-react'
 import { Button } from '../components/Button'
 import { Modal } from '../components/Modal'
 import { PieceForm, type PieceFormValues } from '../components/PieceForm'
@@ -16,38 +16,16 @@ const STAGE_PILL: Record<Stage, string> = {
   3: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300',
 }
 
-type SortMode = 'recent' | 'cumulative' | 'recital' | 'title'
-
 export function RepertoirePage() {
   const [filter, setFilter] = useState<'all' | Stage>('all')
-  const [sort, setSort] = useState<SortMode>('recent')
   const [createOpen, setCreateOpen] = useState(false)
   const pieces = useLiveQuery(() => db.pieces.orderBy('updatedAt').reverse().toArray(), []) ?? []
   const totals = useLiveQuery(() => aggregatedSecondsByPiece(), []) ?? {}
 
-  const filtered = useMemo(() => {
-    const base = filter === 'all' ? pieces : pieces.filter((p) => p.stage === filter)
-    const arr = [...base]
-    switch (sort) {
-      case 'cumulative':
-        arr.sort((a, b) => (totals[b.id] ?? 0) - (totals[a.id] ?? 0))
-        break
-      case 'recital':
-        arr.sort((a, b) => {
-          const ad = a.recitalDate ? new Date(a.recitalDate).getTime() : Infinity
-          const bd = b.recitalDate ? new Date(b.recitalDate).getTime() : Infinity
-          return ad - bd
-        })
-        break
-      case 'title':
-        arr.sort((a, b) => a.title.localeCompare(b.title, 'ko'))
-        break
-      case 'recent':
-      default:
-        arr.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    }
-    return arr
-  }, [pieces, filter, sort, totals])
+  const filtered = useMemo(
+    () => (filter === 'all' ? pieces : pieces.filter((p) => p.stage === filter)),
+    [pieces, filter],
+  )
 
   const counts = useMemo(() => {
     const c = { 1: 0, 2: 0, 3: 0 } as Record<Stage, number>
@@ -65,7 +43,7 @@ export function RepertoirePage() {
     <div className="px-6 py-6 lg:px-10 lg:py-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold">레퍼토리</h1>
+          <h1 className="font-serif text-3xl lg:text-4xl font-bold">레퍼토리</h1>
           <div className="text-sm text-ink-500 dark:text-ink-400">{pieces.length}곡 등록됨</div>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
@@ -74,7 +52,7 @@ export function RepertoirePage() {
         </Button>
       </div>
 
-      <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
+      <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
         <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>
           전체 <span className="opacity-60">({pieces.length})</span>
         </FilterChip>
@@ -83,22 +61,6 @@ export function RepertoirePage() {
             {s}단계 · {STAGE_LABEL_KO[s]} <span className="opacity-60">({counts[s]})</span>
           </FilterChip>
         ))}
-      </div>
-
-      <div className="flex items-center gap-2 mb-5">
-        <ArrowDownNarrowWide size={14} className="text-ink-400" />
-        <label className="text-xs text-ink-500 dark:text-ink-400">정렬</label>
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SortMode)}
-          className="px-3 py-1.5 rounded-md border border-ink-300 dark:border-ink-700 bg-white dark:bg-ink-900 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
-          aria-label="정렬"
-        >
-          <option value="recent">최근 연습 순</option>
-          <option value="cumulative">누적 시간 많은 순</option>
-          <option value="recital">발표회 임박 순</option>
-          <option value="title">제목 가나다순</option>
-        </select>
       </div>
 
       {filtered.length === 0 ? (

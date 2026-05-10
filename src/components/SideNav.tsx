@@ -17,63 +17,56 @@ const items: Item[] = [
   { to: '/settings', label: '설정', icon: Settings },
 ]
 
-export function SideNav() {
+export function TopNav() {
   return (
-    <aside className="hidden md:flex flex-col w-56 lg:w-64 shrink-0 border-r border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900">
-      <div className="px-5 py-6">
-        <div className="font-serif text-3xl font-bold text-accent-600 dark:text-accent-400 leading-none">Étude</div>
-        <div className="mt-1 text-xs text-ink-500 dark:text-ink-400">피아노 연습 기록</div>
-      </div>
-      <nav className="flex-1 px-2 space-y-1">
-        {items.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              [
-                'flex items-center gap-3 px-3 py-3 rounded-lg text-base transition',
-                'min-h-[44px]',
-                isActive
-                  ? 'bg-accent-600 text-white shadow-sm'
-                  : 'text-ink-700 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-800',
-              ].join(' ')
-            }
-          >
-            <Icon size={20} strokeWidth={2} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
-      </nav>
-      <div className="px-4 py-3 text-[11px] text-ink-400 dark:text-ink-500 border-t border-ink-200 dark:border-ink-800">
-        v0.1 · Phase 1
-      </div>
-    </aside>
-  )
-}
+    <header className="shrink-0 sticky top-0 z-20 border-b border-ink-200 dark:border-ink-800 bg-ink-50/85 dark:bg-ink-950/85 backdrop-blur-md">
+      <div className="flex items-center px-4 lg:px-8 h-16 gap-4 lg:gap-8">
+        {/* Brand */}
+        <div className="flex items-baseline gap-2.5 shrink-0">
+          <div className="font-serif text-2xl lg:text-[28px] font-bold text-accent-600 dark:text-accent-300 leading-none tracking-tight">
+            Étude
+          </div>
+          <div className="hidden md:block text-[11px] uppercase tracking-widest text-ink-400 dark:text-ink-500">
+            Piano Practice
+          </div>
+        </div>
 
-export function MobileTopBar() {
-  return (
-    <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900">
-      <div className="font-serif text-xl font-bold text-accent-600 dark:text-accent-400">Étude</div>
-      <nav className="flex gap-1">
-        {items.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            aria-label={label}
-            className={({ isActive }) =>
-              [
-                'p-2 rounded-md min-w-[44px] min-h-[44px] flex items-center justify-center',
-                isActive ? 'bg-accent-600 text-white' : 'text-ink-600 dark:text-ink-300',
-              ].join(' ')
-            }
-          >
-            <Icon size={20} />
-          </NavLink>
-        ))}
-      </nav>
-    </div>
+        {/* Tabs */}
+        <nav className="flex-1 flex gap-1 overflow-x-auto scrollbar-none -my-px" role="tablist">
+          {items.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/'}
+              className={({ isActive }) =>
+                [
+                  'group relative flex items-center gap-2 px-3 lg:px-4 h-16 whitespace-nowrap text-sm font-medium transition-colors',
+                  isActive
+                    ? 'text-accent-700 dark:text-accent-300'
+                    : 'text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100',
+                ].join(' ')
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
+                  <span>{label}</span>
+                  <span
+                    className={[
+                      'absolute left-3 right-3 -bottom-px h-[2px] rounded-full transition-all',
+                      isActive ? 'bg-accent-500 dark:bg-accent-400' : 'bg-transparent group-hover:bg-ink-300 dark:group-hover:bg-ink-700',
+                    ].join(' ')}
+                  />
+                </>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="hidden lg:block text-[11px] tabular text-ink-400 dark:text-ink-500 shrink-0">
+          v0.1
+        </div>
+      </div>
+    </header>
   )
 }

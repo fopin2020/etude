@@ -1,294 +1,251 @@
-import { useEffect, useState } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { Play, Square, Music2, ChevronDown, Activity } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Play, Square, Minus, Plus } from 'lucide-react'
 import { Button } from '../components/Button'
-import { Modal } from '../components/Modal'
-import { BPMControl } from '../components/metronome/BPMControl'
-import { TimeSignaturePicker } from '../components/metronome/TimeSignaturePicker'
-import { BeatVisualizer } from '../components/metronome/BeatVisualizer'
-import { SubdivisionsPicker } from '../components/metronome/SubdivisionsPicker'
-import { PolyrhythmPanel } from '../components/metronome/PolyrhythmPanel'
-import { AccelerationPanel } from '../components/metronome/AccelerationPanel'
-import { useMetronomeStore, getMetronomeEngine } from '../store/metronome'
-import { db } from '../db/database'
+import { NumberField } from '../components/NumberField'
+import { MetronomeEngine, type AccelConfig } from '../lib/metronome'
 
 export function MetronomePage() {
-  const [params] = useSearchParams()
-  const pieceId = params.get('piece') ?? undefined
-  const debug = params.get('debug') === '1'
-  const piece = useLiveQuery(async () => (pieceId ? db.pieces.get(pieceId) : undefined), [pieceId])
+  const engineRef = useRef<MetronomeEngine | null>(null)
+  if (!engineRef.current) engineRef.current = new MetronomeEngine()
+  const engine = engineRef.current
 
-  const config = useMetronomeStore((s) => s.config)
-  const isRunning = useMetronomeStore((s) => s.isRunning)
-  const cueLevel = useMetronomeStore((s) => s.cueLevel)
-  const currentMeasureIdx = useMetronomeStore((s) => s.currentMeasureIdx)
-  const currentBpm = useMetronomeStore((s) => s.currentBpm)
-  const start = useMetronomeStore((s) => s.start)
-  const stop = useMetronomeStore((s) => s.stop)
-  const setConfig = useMetronomeStore((s) => s.setConfig)
+  const [, force] = useState(0)
+  const rerender = () => force((n) => n + 1)
+  const [activeBeat, setActiveBeat] = useState<number>(-1)
+  const [activeSubdiv, setActiveSubdiv] = useState<number>(-1)
 
-  const [showLog, setShowLog] = useState<{ reachedBpm: number } | null>(null)
-  const [accuracyReport, setAccuracyReport] = useState<string | null>(null)
-  const [accuracyOn, setAccuracyOn] = useState<boolean>(debug)
+  // accel UI state — independent of engine until committed via effect below
+  const [accelMode, setAccelMode] = useState<AccelConfig['mode']>('off')
+  const [contEvery, setContEvery] = useState(2)
+  const [contInc, setContInc] = useState(2)
+  const [contMax, setContMax] = useState(200)
+  const [secMeasures, setSecMeasures] = useState(4)
+  const [secReps, setSecReps] = useState(5)
+  const [secInc, setSecInc] = useState(10)
+  const [secMax, setSecMax] = useState(200)
 
-  // Piece linkage: load piece's last logged BPM if present and not already showing it
   useEffect(() => {
-    if (!piece) return
-    if (config.pieceId === piece.id) return
-    const last = piece.tempoLog.at(-1)
-    setConfig({
-      pieceId: piece.id,
-      bpm: last ? last.bpm : config.bpm,
-    })
-  }, [piece, config.pieceId, config.bpm, setConfig])
+    engine.onStateChange = rerender
+    engine.onTick = (e) => {
+      setActiveBeat(e.beatIdx)
+      setActiveSubdiv(e.subdivIdx)
+    }
+    return () => {
+      engine.onStateChange = null
+      engine.onTick = null
+      engine.stop()
+    }
+  }, [engine])
 
-  // Save tempoLog on stop
+  // Keep engine in sync with accel UI
   useEffect(() => {
-    const engine = getMetronomeEngine()
-    return engine.on((e) => {
-      if (e.type !== 'stopped') return
-      if (config.pieceId && e.reachedBpm > 0) {
-        setShowLog({ reachedBpm: Math.round(e.reachedBpm) })
-      }
-      if (accuracyOn) {
-        const r = engine.getAccuracyReport()
-        if (r) {
-          const expected = (r.expectedSec * 1000).toFixed(3)
-          const min = (r.minSec * 1000).toFixed(3)
-          const max = (r.maxSec * 1000).toFixed(3)
-          const avg = (r.avgSec * 1000).toFixed(3)
-          const std = (r.stdDevSec * 1000).toFixed(3)
-          setAccuracyReport(
-            `BPM ${config.bpm} · ${r.count} 박자 측정\n` +
-            `기대 박간격: ${expected} ms\n` +
-            `평균: ${avg} ms (편차 ${r.deviationPct.toFixed(4)}%)\n` +
-            `최소/최대: ${min} / ${max} ms\n` +
-            `표준편차: ${std} ms`,
-          )
-          // eslint-disable-next-line no-console
-          console.log('[metronome:accuracy]', r)
-        }
-      }
-    })
-  }, [config.pieceId, accuracyOn, config.bpm])
-
-  const handleStartStop = async () => {
-    const engine = getMetronomeEngine()
-    if (isRunning) {
-      stop()
+    if (accelMode === 'off') {
+      engine.setAccel({ mode: 'off' })
+    } else if (accelMode === 'continuous') {
+      engine.setAccel({ mode: 'continuous', everyMeasures: contEvery, bpmIncrement: contInc, maxBpm: contMax })
     } else {
-      engine.setAccuracyLogging(accuracyOn)
-      await start()
+      engine.setAccel({ mode: 'sectional', measures: secMeasures, repetitions: secReps, bpmIncrement: secInc, maxBpm: secMax })
     }
-  }
+  }, [engine, accelMode, contEvery, contInc, contMax, secMeasures, secReps, secInc, secMax])
 
-  const handleSaveTempo = async (sectionNote?: string) => {
-    if (!showLog || !config.pieceId) {
-      setShowLog(null)
-      return
-    }
-    await db.pieces
-      .where('id')
-      .equals(config.pieceId)
-      .modify((p) => {
-        p.tempoLog.push({
-          date: new Date().toISOString(),
-          bpm: showLog.reachedBpm,
-          section: sectionNote || undefined,
-        })
-        p.updatedAt = new Date().toISOString()
-      })
-    setShowLog(null)
-  }
-
-  const cueOverlayClass =
-    cueLevel === 2
-      ? 'ring-8 ring-amber-500/70'
-      : cueLevel === 1
-        ? 'ring-4 ring-amber-400/40'
-        : ''
+  const handleBpm = (n: number) => engine.setBpm(n)
+  const handleBeats = (n: number) => engine.setBeatsPerMeasure(n)
+  const handleSubdiv = (n: number) => engine.setSubdivision(n)
 
   return (
-    <div className={`px-6 py-6 lg:px-10 lg:py-8 max-w-5xl mx-auto transition-shadow ${cueOverlayClass} rounded-2xl`}>
-      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
-        <div>
-          <h1 className="text-2xl lg:text-3xl font-bold">메트로놈</h1>
-          {piece ? (
-            <Link to={`/repertoire/${piece.id}`} className="inline-flex items-center gap-1.5 mt-1 text-sm text-accent-600 dark:text-accent-400">
-              <Music2 size={14} />
-              {piece.title} <span className="text-ink-500">— {piece.composer}</span>
-            </Link>
-          ) : (
-            <div className="text-sm text-ink-500 dark:text-ink-400">독립 모드 · 곡 카드에서 메트로놈을 열면 자동 연동됩니다</div>
-          )}
-        </div>
-        {isRunning && (
-          <div className="text-sm tabular text-ink-600 dark:text-ink-300">
-            마디 {currentMeasureIdx + 1} · {Math.round(currentBpm)} BPM
-          </div>
-        )}
+    <div className="px-6 py-6 lg:px-10 lg:py-10 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="font-serif text-3xl lg:text-4xl font-bold mb-1">메트로놈</h1>
+        <div className="text-sm text-ink-500 dark:text-ink-400">정밀 스케줄러 · 분할 · 점진적 가속</div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <section className="bg-white dark:bg-ink-900 rounded-2xl border border-ink-200 dark:border-ink-800 p-6 lg:p-8">
-          <BPMControl />
-          <div className="mt-6">
-            <BeatVisualizer />
+      {/* HERO: BPM + transport + beat indicator */}
+      <section className="bg-white dark:bg-ink-900 rounded-2xl border border-ink-200 dark:border-ink-800 shadow-sm p-8 lg:p-10 mb-6">
+        <div className="flex flex-col lg:flex-row gap-8 lg:items-center">
+          {/* BPM control */}
+          <div className="flex-1">
+            <div className="text-xs uppercase tracking-widest text-ink-500 dark:text-ink-400 mb-3">Tempo · BPM</div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => handleBpm(engine.bpm - 1)}
+                aria-label="BPM 감소"
+                className="w-11 h-11 rounded-full border border-ink-200 dark:border-ink-700 text-ink-600 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-800 flex items-center justify-center transition shrink-0"
+              >
+                <Minus size={18} />
+              </button>
+              <NumberField
+                value={engine.bpm}
+                onChange={handleBpm}
+                min={30}
+                max={500}
+                aria-label="BPM 직접 입력"
+                className="font-serif text-7xl lg:text-8xl font-bold w-44 lg:w-52 text-center bg-transparent outline-none focus:bg-ink-50 dark:focus:bg-ink-800 rounded-xl px-2 py-1 text-accent-700 dark:text-accent-300 caret-accent-500"
+              />
+              <button
+                onClick={() => handleBpm(engine.bpm + 1)}
+                aria-label="BPM 증가"
+                className="w-11 h-11 rounded-full border border-ink-200 dark:border-ink-700 text-ink-600 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-800 flex items-center justify-center transition shrink-0"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+            <div className="text-xs text-ink-400 dark:text-ink-500 mt-2 ml-1">30 – 500 · 숫자를 직접 입력하거나 ↑↓ 화살표로 조정</div>
           </div>
-          <div className="mt-6 flex justify-center">
-            {isRunning ? (
-              <Button size="lg" variant="danger" onClick={() => void handleStartStop()} className="px-10">
-                <Square size={22} fill="currentColor" /> 정지
+
+          {/* Transport */}
+          <div className="lg:w-56">
+            {engine.isRunning ? (
+              <Button size="lg" variant="danger" className="w-full" onClick={() => engine.stop()}>
+                <Square size={22} fill="currentColor" />정지
               </Button>
             ) : (
-              <Button size="lg" onClick={() => void handleStartStop()} className="px-10">
-                <Play size={22} fill="currentColor" /> 시작
+              <Button size="lg" className="w-full" onClick={() => engine.start()}>
+                <Play size={22} fill="currentColor" />시작
               </Button>
             )}
           </div>
-          {accuracyOn && (
-            <div className="mt-4 text-xs text-ink-500 dark:text-ink-400 text-center flex items-center justify-center gap-1.5">
-              <Activity size={12} /> 정확도 측정 중 — 정지 시 결과 출력
-            </div>
-          )}
-        </section>
-
-        <div className="space-y-4">
-          <Card title="박자표">
-            <TimeSignaturePicker />
-          </Card>
-          <Collapsible title="분할 (Subdivisions)" defaultOpen>
-            <SubdivisionsPicker />
-          </Collapsible>
-          <Collapsible title="폴리리듬">
-            <PolyrhythmPanel />
-          </Collapsible>
-          <Collapsible title="점진적 템포 증가">
-            <AccelerationPanel />
-          </Collapsible>
-          <Collapsible title="신호">
-            <CuesPanel />
-          </Collapsible>
-          {debug && (
-            <Card title="디버그">
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={accuracyOn} onChange={(e) => setAccuracyOn(e.target.checked)} className="w-5 h-5 accent-accent-600" />
-                정확도 측정 (콘솔에도 출력)
-              </label>
-            </Card>
-          )}
         </div>
-      </div>
 
-      <Modal open={!!showLog} onClose={() => setShowLog(null)} title="템포 기록 저장">
-        <SaveTempoForm
-          bpm={showLog?.reachedBpm ?? 0}
-          pieceTitle={piece?.title}
-          onSave={handleSaveTempo}
-          onSkip={() => setShowLog(null)}
-        />
-      </Modal>
-
-      <Modal open={!!accuracyReport} onClose={() => setAccuracyReport(null)} title="정확도 측정 결과">
-        <pre className="text-xs whitespace-pre-wrap font-mono bg-ink-50 dark:bg-ink-950 p-4 rounded-lg">
-          {accuracyReport}
-        </pre>
-        <div className="text-xs text-ink-500 dark:text-ink-400 mt-3">
-          편차 0.001% 이하면 청각적 박 흔들림이 인지되지 않습니다. Web Audio의 sample-accurate 스케줄링이 적용되어 있어
-          시스템 오디오 스택 자체의 지터(보통 ≤1ms)를 제외하면 본 엔진은 마이크로초 단위로 일관된 박을 출력합니다.
+        {/* Beat indicator */}
+        <div className="mt-10 flex items-end justify-center gap-2">
+          {Array.from({ length: engine.beatsPerMeasure }).map((_, i) => (
+            <BeatLamp key={i} active={engine.isRunning && activeBeat === i} downbeat={i === 0} />
+          ))}
         </div>
-      </Modal>
+        {engine.subdivision > 1 && (
+          <div className="mt-3 flex items-center justify-center gap-1 text-[11px] tabular text-ink-500 dark:text-ink-400">
+            <span className="opacity-70">박당 분할:</span>
+            <span className="text-accent-600 dark:text-accent-300 font-semibold">{engine.subdivision}</span>
+            {engine.isRunning && activeSubdiv >= 0 && (
+              <span className="opacity-70">· 현재 {activeSubdiv + 1}/{engine.subdivision}</span>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Time signature & subdivision */}
+      <section className="bg-white dark:bg-ink-900 rounded-2xl border border-ink-200 dark:border-ink-800 shadow-sm p-6 lg:p-8 mb-6">
+        <h2 className="font-serif text-xl font-semibold mb-1">박자 · 분할</h2>
+        <p className="text-sm text-ink-500 dark:text-ink-400 mb-5">한 마디의 박 수, 한 박을 몇 등분할지.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <Field label="한 마디 박 수" hint="1 – 16">
+            <NumberField
+              value={engine.beatsPerMeasure}
+              onChange={handleBeats}
+              min={1}
+              max={16}
+              className={inputCls}
+            />
+          </Field>
+          <Field label="박당 분할 수" hint="1 = 정박 / 2 = 8분 / 3 = 셋잇단 / 4 = 16분 / 6 = 6잇단">
+            <NumberField
+              value={engine.subdivision}
+              onChange={handleSubdiv}
+              min={1}
+              max={9}
+              className={inputCls}
+            />
+          </Field>
+        </div>
+      </section>
+
+      {/* Acceleration */}
+      <section className="bg-white dark:bg-ink-900 rounded-2xl border border-ink-200 dark:border-ink-800 shadow-sm p-6 lg:p-8">
+        <h2 className="font-serif text-xl font-semibold mb-1">점진적 템포 증가</h2>
+        <p className="text-sm text-ink-500 dark:text-ink-400 mb-5">
+          정해둔 마디가 지나면 자동으로 BPM을 올려가며 연습합니다. 빈 칸으로 두면 입력 후 자동 보정됩니다.
+        </p>
+
+        <div className="flex flex-wrap gap-2 mb-6">
+          {[
+            { v: 'off' as const, l: '끄기' },
+            { v: 'continuous' as const, l: '매 N마디마다 +M' },
+            { v: 'sectional' as const, l: '구간 N회 반복 후 +M' },
+          ].map(({ v, l }) => (
+            <button
+              key={v}
+              onClick={() => setAccelMode(v)}
+              className={[
+                'px-4 py-2 rounded-full text-sm font-medium border transition min-h-[40px]',
+                accelMode === v
+                  ? 'bg-accent-500 text-white border-accent-500 shadow-sm'
+                  : 'bg-white dark:bg-ink-900 border-ink-200 dark:border-ink-700 text-ink-700 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-800',
+              ].join(' ')}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {accelMode === 'continuous' && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <Field label="N마디마다" hint="이만큼의 마디가 지나면">
+              <NumberField value={contEvery} onChange={setContEvery} min={1} max={64} className={inputCls} />
+            </Field>
+            <Field label="+ BPM 증가" hint="이만큼 BPM 상승">
+              <NumberField value={contInc} onChange={setContInc} min={1} max={50} className={inputCls} />
+            </Field>
+            <Field label="최대 BPM" hint="이 BPM에서 가속 멈춤">
+              <NumberField value={contMax} onChange={setContMax} min={60} max={500} className={inputCls} />
+            </Field>
+          </div>
+        )}
+
+        {accelMode === 'sectional' && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
+            <Field label="구간 마디 수" hint="한 구간의 길이">
+              <NumberField value={secMeasures} onChange={setSecMeasures} min={1} max={64} className={inputCls} />
+            </Field>
+            <Field label="반복 횟수" hint="한 BPM에서 몇 번 반복">
+              <NumberField value={secReps} onChange={setSecReps} min={1} max={50} className={inputCls} />
+            </Field>
+            <Field label="+ BPM 증가" hint="반복 끝에 이만큼 상승">
+              <NumberField value={secInc} onChange={setSecInc} min={1} max={50} className={inputCls} />
+            </Field>
+            <Field label="최대 BPM" hint="이 BPM에서 가속 멈춤">
+              <NumberField value={secMax} onChange={setSecMax} min={60} max={500} className={inputCls} />
+            </Field>
+          </div>
+        )}
+
+        {accelMode !== 'off' && (
+          <div className="mt-5 px-4 py-3 rounded-lg bg-accent-50 dark:bg-accent-950/40 border border-accent-200 dark:border-accent-900 text-sm text-accent-800 dark:text-accent-200">
+            {accelMode === 'continuous'
+              ? `현재 설정: 매 ${contEvery}마디마다 +${contInc} BPM, 최대 ${contMax} BPM`
+              : `현재 설정: ${secMeasures}마디 × ${secReps}회 반복마다 +${secInc} BPM, 최대 ${secMax} BPM`}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+const inputCls =
+  'w-full px-3 py-2.5 rounded-lg border border-ink-200 dark:border-ink-700 bg-ink-50 dark:bg-ink-800 ' +
+  'tabular text-lg text-center focus:outline-none focus:ring-2 focus:ring-accent-400 focus:border-accent-400'
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <section className="bg-white dark:bg-ink-900 rounded-2xl border border-ink-200 dark:border-ink-800 p-5">
-      <h2 className="text-sm font-semibold mb-3">{title}</h2>
+    <div>
+      <label className="block text-sm font-medium text-ink-700 dark:text-ink-200 mb-1.5">{label}</label>
       {children}
-    </section>
-  )
-}
-
-function Collapsible({ title, children, defaultOpen }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(!!defaultOpen)
-  return (
-    <section className="bg-white dark:bg-ink-900 rounded-2xl border border-ink-200 dark:border-ink-800">
-      <button
-        className="w-full px-5 py-3.5 flex items-center justify-between min-h-[52px]"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="text-sm font-semibold">{title}</span>
-        <ChevronDown size={18} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && <div className="px-5 pb-5">{children}</div>}
-    </section>
-  )
-}
-
-function CuesPanel() {
-  const config = useMetronomeStore((s) => s.config)
-  const setConfig = useMetronomeStore((s) => s.setConfig)
-  return (
-    <div className="space-y-2">
-      <CueRow label="시각 신호 (가속 직전 화면 가장자리 색)" checked={config.cues.visual} onChange={(v) => setConfig({ cues: { ...config.cues, visual: v } })} />
-      <CueRow label="청각 신호 (가속 마디의 마지막 박은 차임)" checked={config.cues.audible} onChange={(v) => setConfig({ cues: { ...config.cues, audible: v } })} />
-      <div className="text-xs text-ink-500 dark:text-ink-400 pt-1">
-        가속 모드가 켜져 있을 때만 작동합니다.
-      </div>
+      {hint && <div className="text-[11px] text-ink-400 dark:text-ink-500 mt-1.5 ml-0.5">{hint}</div>}
     </div>
   )
 }
 
-function CueRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function BeatLamp({ active, downbeat }: { active: boolean; downbeat: boolean }) {
   return (
-    <label className="flex items-center justify-between gap-3 py-2 cursor-pointer">
-      <span className="text-sm">{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="w-5 h-5 accent-accent-600"
-      />
-    </label>
-  )
-}
-
-function SaveTempoForm({
-  bpm,
-  pieceTitle,
-  onSave,
-  onSkip,
-}: {
-  bpm: number
-  pieceTitle?: string
-  onSave: (section?: string) => void | Promise<void>
-  onSkip: () => void
-}) {
-  const [section, setSection] = useState('')
-  return (
-    <div className="space-y-4">
-      <div className="text-sm">
-        <strong className="font-semibold">{pieceTitle ?? '곡'}</strong>의 템포 진척도에
-        <span className="tabular font-bold text-accent-600 dark:text-accent-400"> {bpm} BPM</span>을 기록합니다.
-      </div>
-      <label className="block">
-        <span className="block text-xs font-medium text-ink-600 dark:text-ink-300 mb-1.5">구간 메모 (선택)</span>
-        <input
-          type="text"
-          value={section}
-          onChange={(e) => setSection(e.target.value)}
-          placeholder="예: A섹션, mm. 24–32"
-          className="w-full px-3 py-2.5 rounded-lg border border-ink-300 dark:border-ink-700 bg-white dark:bg-ink-900 focus:outline-none focus:ring-2 focus:ring-accent-500 min-h-[44px]"
-        />
-      </label>
-      <div className="flex gap-3 justify-end">
-        <Button variant="ghost" onClick={onSkip}>건너뛰기</Button>
-        <Button onClick={() => void onSave(section)}>기록</Button>
-      </div>
-    </div>
+    <div
+      className={[
+        'rounded-full transition-all duration-100',
+        downbeat ? 'h-4 w-12' : 'h-3 w-7',
+        active
+          ? downbeat
+            ? 'bg-accent-500 shadow-[0_0_18px_rgba(190,138,82,0.6)]'
+            : 'bg-accent-400 shadow-[0_0_12px_rgba(212,165,116,0.5)]'
+          : 'bg-ink-200 dark:bg-ink-800',
+      ].join(' ')}
+    />
   )
 }
