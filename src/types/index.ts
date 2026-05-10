@@ -67,8 +67,11 @@ export interface Goals {
   monthlyMin?: number
   longTermTotalHours?: number
   protectionDaysPerWeek?: number
+  neglectedThresholdDays?: number
   updatedAt: string
 }
+
+export const DEFAULT_NEGLECTED_DAYS = 30
 
 export type AccelerationConfig =
   | { mode: 'continuous'; everyMeasures: number; bpmIncrement: number; maxBpm: number }

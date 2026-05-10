@@ -4,7 +4,8 @@ import { CATEGORY_LABEL_KO } from '../types'
 import { formatDuration } from '../lib/format'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/database'
-import { Pause, Play } from 'lucide-react'
+import { Pause, Play, Mic } from 'lucide-react'
+import { RecorderModal } from './RecorderModal'
 
 export function ActiveSessionBar() {
   const active = useTimerStore((s) => s.active)
@@ -14,6 +15,7 @@ export function ActiveSessionBar() {
     async () => (active?.pieceId ? db.pieces.get(active.pieceId) : undefined),
     [active?.pieceId],
   )
+  const [recOpen, setRecOpen] = useState(false)
 
   const [, force] = useState(0)
   useEffect(() => {
@@ -27,20 +29,41 @@ export function ActiveSessionBar() {
   const isPaused = !!active.pausedAt
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-accent-600 text-white">
-      <span className={`inline-block w-2 h-2 rounded-full ${isPaused ? 'bg-white/50' : 'bg-emerald-300 animate-pulse'}`} />
-      <span className="text-sm font-medium">
-        연습 중 · {CATEGORY_LABEL_KO[active.category]}
-        {piece ? ` · ${piece.title}` : ''}
-      </span>
-      <span className="ml-auto tabular text-lg font-semibold">{formatDuration(elapsed)}</span>
-      <button
-        onClick={isPaused ? resume : pause}
-        className="ml-2 p-2 min-w-[44px] min-h-[44px] rounded-md bg-white/15 hover:bg-white/25 flex items-center justify-center"
-        aria-label={isPaused ? '재개' : '일시정지'}
-      >
-        {isPaused ? <Play size={18} /> : <Pause size={18} />}
-      </button>
-    </div>
+    <>
+      <div className="flex items-center gap-3 px-4 py-2 bg-accent-600 text-white">
+        <span className={`inline-block w-2 h-2 rounded-full ${isPaused ? 'bg-white/50' : 'bg-emerald-300 animate-pulse'}`} />
+        <span className="text-sm font-medium truncate">
+          연습 중 · {CATEGORY_LABEL_KO[active.category]}
+          {piece ? ` · ${piece.title}` : ''}
+        </span>
+        <span className="ml-auto tabular text-lg font-semibold">{formatDuration(elapsed)}</span>
+        {active.pieceId && (
+          <button
+            onClick={() => setRecOpen(true)}
+            className="p-2 min-w-[44px] min-h-[44px] rounded-md bg-white/15 hover:bg-white/25 flex items-center justify-center"
+            aria-label="녹음"
+            title="이 곡 녹음"
+          >
+            <Mic size={18} />
+          </button>
+        )}
+        <button
+          onClick={isPaused ? resume : pause}
+          className="p-2 min-w-[44px] min-h-[44px] rounded-md bg-white/15 hover:bg-white/25 flex items-center justify-center"
+          aria-label={isPaused ? '재개' : '일시정지'}
+        >
+          {isPaused ? <Play size={18} /> : <Pause size={18} />}
+        </button>
+      </div>
+
+      {active.pieceId && (
+        <RecorderModal
+          open={recOpen}
+          onClose={() => setRecOpen(false)}
+          pieceId={active.pieceId}
+          pieceTitle={piece?.title}
+        />
+      )}
+    </>
   )
 }

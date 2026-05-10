@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sun, Moon, Monitor, Download, Upload, AlertTriangle } from 'lucide-react'
+import { Sun, Moon, Monitor, Download, Upload, AlertTriangle, HardDrive } from 'lucide-react'
 import { Button } from '../components/Button'
 import { Modal } from '../components/Modal'
 import { useUIStore } from '../store/ui'
 import { db, getOrCreateGoals } from '../db/database'
+import { DEFAULT_NEGLECTED_DAYS } from '../types'
 import { downloadExport, importFromFile, type ImportOptions, type ImportResult } from '../lib/exportImport'
+import { totalRecordingBytes, formatBytes } from '../lib/recorder'
+import { useLiveQuery } from 'dexie-react-hooks'
 
 export function SettingsPage() {
   const theme = useUIStore((s) => s.theme)
@@ -13,15 +16,22 @@ export function SettingsPage() {
   const [dailyMin, setDailyMin] = useState<number | ''>('')
   const [weeklyMin, setWeeklyMin] = useState<number | ''>('')
   const [monthlyMin, setMonthlyMin] = useState<number | ''>('')
+  const [longTermHours, setLongTermHours] = useState<number | ''>('')
   const [protectionDays, setProtectionDays] = useState<number | ''>('')
+  const [neglectedDays, setNeglectedDays] = useState<number | ''>('')
   const [savedFlash, setSavedFlash] = useState(false)
+
+  const recordingBytes = useLiveQuery(() => totalRecordingBytes(), []) ?? 0
+  const recordingCount = useLiveQuery(() => db.recordings.count(), []) ?? 0
 
   useEffect(() => {
     void getOrCreateGoals().then((g) => {
       setDailyMin(g.dailyMin ?? '')
       setWeeklyMin(g.weeklyMin ?? '')
       setMonthlyMin(g.monthlyMin ?? '')
+      setLongTermHours(g.longTermTotalHours ?? '')
       setProtectionDays(g.protectionDaysPerWeek ?? '')
+      setNeglectedDays(g.neglectedThresholdDays ?? DEFAULT_NEGLECTED_DAYS)
     })
   }, [])
 
@@ -31,7 +41,9 @@ export function SettingsPage() {
       dailyMin: dailyMin === '' ? undefined : Number(dailyMin),
       weeklyMin: weeklyMin === '' ? undefined : Number(weeklyMin),
       monthlyMin: monthlyMin === '' ? undefined : Number(monthlyMin),
+      longTermTotalHours: longTermHours === '' ? undefined : Number(longTermHours),
       protectionDaysPerWeek: protectionDays === '' ? undefined : Number(protectionDays),
+      neglectedThresholdDays: neglectedDays === '' ? undefined : Number(neglectedDays),
       updatedAt: new Date().toISOString(),
     })
     setSavedFlash(true)
@@ -80,24 +92,44 @@ export function SettingsPage() {
         </div>
       </Section>
 
-      <Section title="목표 시간 (분)">
+      <Section title="목표">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="일일 목표">
+          <Field label="일일 목표 (분)">
             <input type="number" min={0} className={inputCls} value={dailyMin} onChange={(e) => setDailyMin(e.target.value === '' ? '' : Number(e.target.value))} placeholder="예: 60" />
           </Field>
-          <Field label="주간 목표">
+          <Field label="주간 목표 (분)">
             <input type="number" min={0} className={inputCls} value={weeklyMin} onChange={(e) => setWeeklyMin(e.target.value === '' ? '' : Number(e.target.value))} placeholder="예: 360" />
           </Field>
-          <Field label="월간 목표">
+          <Field label="월간 목표 (분)">
             <input type="number" min={0} className={inputCls} value={monthlyMin} onChange={(e) => setMonthlyMin(e.target.value === '' ? '' : Number(e.target.value))} placeholder="예: 1500" />
           </Field>
-          <Field label="주당 보호일 (휴식 가능 일수)">
+          <Field label="장기 목표 (시간)">
+            <input type="number" min={0} className={inputCls} value={longTermHours} onChange={(e) => setLongTermHours(e.target.value === '' ? '' : Number(e.target.value))} placeholder="예: 10000" />
+          </Field>
+          <Field label="주당 보호일 (휴식 가능)">
             <input type="number" min={0} max={7} className={inputCls} value={protectionDays} onChange={(e) => setProtectionDays(e.target.value === '' ? '' : Number(e.target.value))} placeholder="예: 1" />
+          </Field>
+          <Field label="방치 곡 임계 (일)">
+            <input type="number" min={1} max={365} className={inputCls} value={neglectedDays} onChange={(e) => setNeglectedDays(e.target.value === '' ? '' : Number(e.target.value))} placeholder="기본 30" />
           </Field>
         </div>
         <div className="mt-4 flex items-center gap-3">
           <Button onClick={saveGoals}>저장</Button>
           {savedFlash && <span className="text-sm text-emerald-600 dark:text-emerald-400">저장되었습니다</span>}
+        </div>
+      </Section>
+
+      <Section title="저장 공간">
+        <div className="flex items-start gap-3">
+          <HardDrive size={20} className="text-ink-500 mt-0.5" />
+          <div className="flex-1">
+            <div className="text-sm">
+              녹음 {recordingCount}개 · {formatBytes(recordingBytes)}
+            </div>
+            <div className="text-xs text-ink-500 dark:text-ink-400 mt-1">
+              곡당 최대 10개 녹음이 보관됩니다. 초과 시 가장 오래된 것부터 자동 삭제됩니다.
+            </div>
+          </div>
         </div>
       </Section>
 

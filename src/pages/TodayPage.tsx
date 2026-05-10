@@ -25,7 +25,12 @@ export function TodayPage() {
   const active = useTimerStore((s) => s.active)
   const now = useNow(!!active)
 
-  const goals = useLiveQuery(() => getOrCreateGoals(), [])
+  // useLiveQuery runs inside a Dexie read-only context, so it must NOT write.
+  // Initialize goals separately, then read reactively.
+  useEffect(() => {
+    void getOrCreateGoals()
+  }, [])
+  const goals = useLiveQuery(() => db.goals.get('singleton'), [])
   const todaySessions = useLiveQuery(async () => {
     const all = await db.sessions.toArray()
     return all.filter((s) => isSameLocalDay(s.date, new Date()))

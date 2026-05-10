@@ -36,31 +36,39 @@ export function SessionsPage() {
           {grouped.map(({ dateKey, items, totalSec }) => (
             <div key={dateKey} className="bg-white dark:bg-ink-900 rounded-2xl border border-ink-200 dark:border-ink-800 overflow-hidden">
               <div className="flex justify-between items-center px-5 py-3 border-b border-ink-100 dark:border-ink-800 bg-ink-50/60 dark:bg-ink-950/40">
-                <div className="font-semibold">{formatDateKo(items[0].date, 'M월 d일 (eee)')}</div>
+                <div className="font-semibold">{formatDateKo(items[0]!.date, 'M월 d일 (eee)')}</div>
                 <div className="tabular text-sm text-ink-600 dark:text-ink-300">합계 {formatDuration(totalSec)}</div>
               </div>
               <ul className="divide-y divide-ink-100 dark:divide-ink-800">
                 {items.map((s: Session) => {
                   const piece = s.pieceId ? piecesById[s.pieceId] : undefined
+                  const hasNotes = s.notes && (s.notes.wentWell || s.notes.needsWork || s.notes.nextStart)
                   return (
-                    <li key={s.id} className="px-5 py-3 flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">
-                          {CATEGORY_LABEL_KO[s.category]}
-                          {piece && <span className="text-ink-500 dark:text-ink-400"> · {piece.title}</span>}
+                    <li key={s.id} className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">
+                            {CATEGORY_LABEL_KO[s.category]}
+                            {piece && <span className="text-ink-500 dark:text-ink-400"> · {piece.title}</span>}
+                          </div>
+                          <div className="text-xs text-ink-500 dark:text-ink-400">{formatDateKo(s.date, 'HH:mm')}</div>
                         </div>
-                        <div className="text-xs text-ink-500 dark:text-ink-400">
-                          {formatDateKo(s.date, 'HH:mm')}
-                        </div>
+                        <div className="tabular text-sm font-medium">{formatDuration(s.durationSec)}</div>
+                        <button
+                          aria-label="삭제"
+                          onClick={() => handleDelete(s.id)}
+                          className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-ink-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950"
+                        >
+                          <Trash2 size={18} />
+                        </button>
                       </div>
-                      <div className="tabular text-sm font-medium">{formatDuration(s.durationSec)}</div>
-                      <button
-                        aria-label="삭제"
-                        onClick={() => handleDelete(s.id)}
-                        className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-ink-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      {hasNotes && (
+                        <div className="mt-2 ml-1 space-y-1 text-xs text-ink-600 dark:text-ink-300">
+                          {s.notes!.wentWell && <NoteRow icon="✓" tone="emerald" text={s.notes!.wentWell} />}
+                          {s.notes!.needsWork && <NoteRow icon="!" tone="amber" text={s.notes!.needsWork} />}
+                          {s.notes!.nextStart && <NoteRow icon="→" tone="indigo" text={s.notes!.nextStart} />}
+                        </div>
+                      )}
                     </li>
                   )
                 })}
@@ -69,6 +77,20 @@ export function SessionsPage() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function NoteRow({ icon, tone, text }: { icon: string; tone: 'emerald' | 'amber' | 'indigo'; text: string }) {
+  const cls = {
+    emerald: 'text-emerald-600 dark:text-emerald-400',
+    amber: 'text-amber-600 dark:text-amber-400',
+    indigo: 'text-accent-600 dark:text-accent-400',
+  }[tone]
+  return (
+    <div className="flex gap-2">
+      <span className={`shrink-0 font-bold ${cls}`}>{icon}</span>
+      <span className="whitespace-pre-wrap">{text}</span>
     </div>
   )
 }
